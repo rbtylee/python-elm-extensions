@@ -37,8 +37,9 @@ class AboutWindow(Window):
     A standardized About Window Class for EFL
     '''
     __initialized = False
-    # pylint: disable=too-many-arguments, too-many-locals
+    # pylint: disable=too-many-arguments, too-many-locals, too-many-statements
     def __init__(self,
+                 parent,
                  title="About",
                  standardicon="dialog-information",
                  version="N/A",
@@ -51,7 +52,7 @@ class AboutWindow(Window):
             raise InstanceError(
                 "You can't create more than 1 instance of AboutWindow")
         AboutWindow.__initialized = True
-
+        self.parent = parent
         Window.__init__(self, title, ELM_WIN_DIALOG_BASIC, autodel=True)
         self.callback_delete_request_add(self.cb_close)
         background = Background(self, size_hint_weight=EXPAND_BOTH)
