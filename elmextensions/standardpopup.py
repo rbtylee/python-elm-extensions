@@ -19,6 +19,7 @@ ALIGN_CENTER = 0.5, 0.5
 # pylint: disable=no-member,too-few-public-methods
 class StandardPopup:
     '''Standard popup class'''
+
     def __init__(self, our_parent, our_msg, *args, our_ic=None, **kwargs):
         Popup.__init__(self, our_parent, *args, **kwargs)
         self.callback_block_clicked_add(lambda obj: self.delete())
@@ -50,7 +51,8 @@ class StandardPopup:
             #   when aboutWin is initialized so no need to redisplay.
             pass
         # Add dialog text to table
-        dialog_lb = Label(self, line_wrap=ELM_WRAP_WORD,
+        dialog_lb = Label(self,
+                          line_wrap=ELM_WRAP_WORD,
                           size_hint_weight=EXPAND_HORIZ,
                           size_hint_align=FILL_BOTH)
         dialog_lb.text = our_msg
