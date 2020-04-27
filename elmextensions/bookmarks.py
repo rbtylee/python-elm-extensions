@@ -5,6 +5,7 @@ import os
 import xml.etree.ElementTree as et
 
 
+# pylint: disable=too-few-public-methods
 class Bookmarks(object):
     '''
     Bookmarks Class representing recently-used.xbel file_name file_path data.
@@ -51,4 +52,4 @@ class Bookmarks(object):
 
 if __name__ == "__main__":
     RECENT = Bookmarks()
-    print RECENT["test.txt"]
+    print(RECENT["test.txt"])
