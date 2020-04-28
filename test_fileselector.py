@@ -22,7 +22,7 @@ class MainWindow(object):
                                                     size_hint_weight=EXPAND_BOTH,
                                                     size_hint_align=FILL_BOTH)
         # f_selector.folderOnlySet(True)
-        f_selector.setMode("Open")
+        f_selector.set_mode("Open")
         f_selector.show()
 
         f_selector.callback_activated_add(self.cb_activated)

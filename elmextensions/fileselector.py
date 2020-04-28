@@ -1,30 +1,27 @@
-# encoding: utf-8
-from efl import ecore
-from efl.elementary.label import Label
-from efl.elementary.icon import Icon, ELM_ICON_LOOKUP_THEME
-from efl.elementary.box import Box
-from efl.elementary.list import List
-from efl.elementary.genlist import Genlist, GenlistItem, GenlistItemClass, \
-    ELM_LIST_COMPRESS
-from efl.elementary.button import Button
-from efl.elementary.hoversel import Hoversel
-from efl.elementary.separator import Separator
-from efl.elementary.panes import Panes
-from efl.elementary.popup import Popup
-from efl.elementary.entry import Entry, ELM_INPUT_HINT_AUTO_COMPLETE
-from efl.elementary.image import Image
-
-# pylint: disable=no-name-in-module
-from efl.evas import EVAS_HINT_EXPAND, EVAS_HINT_FILL, EVAS_CALLBACK_KEY_DOWN
-
-# imported to work around a bug
-# import efl.elementary.layout
-
+'''FileSelector widget for EFL'''
 import os
 import math
+from collections import deque
+from efl import ecore
+from efl.elementary.box import Box
+from efl.elementary.button import Button
+from efl.elementary.entry import Entry, ELM_INPUT_HINT_AUTO_COMPLETE
+from efl.elementary.hoversel import Hoversel
+from efl.elementary.icon import Icon, ELM_ICON_LOOKUP_THEME
+from efl.elementary.image import Image
+from efl.elementary.genlist import Genlist, GenlistItem, GenlistItemClass, \
+    ELM_LIST_COMPRESS
+from efl.elementary.label import Label
+from efl.elementary.list import List
+from efl.elementary.panes import Panes
+from efl.elementary.popup import Popup
+from efl.elementary.separator import Separator
+# pylint: disable=no-name-in-module
+from efl.evas import EVAS_HINT_EXPAND, EVAS_HINT_FILL, EVAS_CALLBACK_KEY_DOWN
+# imported to work around a bug
+# import efl.elementary.layout
 from .easythreading import ThreadedFunction
 from .bookmarks import Bookmarks
-from collections import deque
 
 EXPAND_BOTH = EVAS_HINT_EXPAND, EVAS_HINT_EXPAND
 EXPAND_HORIZ = EVAS_HINT_EXPAND, 0.0
@@ -33,72 +30,81 @@ FILL_HORIZ = EVAS_HINT_FILL, 0.5
 
 
 class FileGLIC(GenlistItemClass):
+    '''GenlistItemClass for files'''
     error = False
 
-    def text_get(self, gl, part, data):
+    # pylint: disable=unused-argument, no-self-use
+    def text_get(self, gen_lst, part, data):
+        '''Return text for GenlistItem'''
         return data["d"]
 
-    def content_get(self, gl, part, data):
+    def content_get(self, gen_lst, part, data):
+        '''Return Icon for GenlistItem'''
+        icon = None
         if part == "elm.swallow.icon":
-            ic = None
             try:
-                ic = Icon(gl, standard="file")
+                icon = Icon(gen_lst, standard="file")
             except RuntimeWarning:
                 try:
-                    ic = Icon(gl, standard="gtk-file")
+                    icon = Icon(gen_lst, standard="gtk-file")
                 except RuntimeWarning:
                     if not FileGLIC.error:
                         print("ERROR: Cannot find gtk-file icon")
                         FileGLIC.error = True
-            return ic
-
-
-fileglic = FileGLIC(item_style="one_icon")
+        return icon
 
 
 class DirGLIC(GenlistItemClass):
-
-    def text_get(self, gl, part, data):
+    '''GenlistItemClass for folders'''
+    # pylint: disable=unused-argument, no-self-use
+    def text_get(self, gen_lst, part, data):
+        '''Return text for GenlistItem'''
         return data["d"]
 
-    def content_get(self, gl, part, data):
+    def content_get(self, gen_lst, part, data):
+        '''Return icon for GenlistItem'''
         if part == "elm.swallow.icon":
-            return Icon(gl, standard="folder")
+            return Icon(gen_lst, standard="folder")
+        return None
 
 
-dirglic = DirGLIC(item_style="one_icon")
+FILEGLIC = FileGLIC(item_style="one_icon")
+DIRGLIC = DirGLIC(item_style="one_icon")
 
 
+# pylint: disable=too-many-public-methods, too-many-locals
 class FileSelector(Box):
-
+    '''FileSelector Class'''
+    # pylint: disable=too-many-instance-attributes, too-many-statements
     def __init__(self,
                  parent_widget,
-                 defaultPath="",
-                 defaultPopulate=True,
                  *args,
+                 default_path="",
+                 default_populate=True,
                  **kwargs):
         Box.__init__(self, parent_widget, *args, **kwargs)
 
-        self.cancelCallback = None
-        self.actionCallback = None
-        self.directoryChangeCallback = None
+        self.cancel_cb = None
+        self.action_cb = None
+        self.cb_dir_change = None
 
-        self.threadedFunction = ThreadedFunction()
-        self._timer = ecore.Timer(0.02, self.populateFile)
+        self.threaded_fn = ThreadedFunction()
+        # pylint: disable=c-extension-no-member
+        self._timer = ecore.Timer(0.02, self.populate_file)
 
         # Watch key presses for ctrl+l to select entry
-        parent_widget.elm_event_callback_add(self.eventsCb)
+        parent_widget.elm_event_callback_add(self.cb_events)
 
-        self.selectedFolder = None
-        self.showHidden = False
-        self.currentDirectory = None
-        self.focusedEntry = None
-        self.folderOnly = False
-        self.sortReverse = False
-        self.addingHidden = False
-        self.pendingFiles = deque()
-        self.currentSubFolders = []
-        self.currentFiles = []
+        self.selected_dir = None
+        self.show_hidden = False
+        self.cur_dir = None
+        self.focused_entry = None
+        self.dir_only = False
+        self.sort_reverse = False
+        self.adding_hidden = False
+        self.pending_files = deque()
+        self.cur_subdirs = []
+        self.cur_files = []
 
         # Mode should be "save" or "load"
         self.mode = "save"
@@ -114,28 +120,28 @@ class FileSelector(Box):
         self.root = "/"
 
         # Label+Entry for File Name
-        self.filenameBox = Box(self,
+        self.filename_bx = Box(self,
                                size_hint_weight=EXPAND_HORIZ,
                                size_hint_align=FILL_HORIZ)
-        self.filenameBox.horizontal = True
-        self.filenameBox.show()
+        self.filename_bx.horizontal = True
+        self.filename_bx.show()
 
-        fileLabel = Label(self,
-                          size_hint_weight=(0.15, EVAS_HINT_EXPAND),
-                          size_hint_align=FILL_HORIZ)
-        fileLabel.text = "Filename:"
-        fileLabel.show()
+        file_label = Label(self,
+                           size_hint_weight=(0.15, EVAS_HINT_EXPAND),
+                           size_hint_align=FILL_HORIZ)
+        file_label.text = "Filename:"
+        file_label.show()
 
-        self.fileEntry = Entry(self,
-                               size_hint_weight=EXPAND_BOTH,
-                               size_hint_align=FILL_HORIZ)
-        self.fileEntry.single_line_set(True)
-        self.fileEntry.scrollable_set(True)
-        self.fileEntry.callback_changed_user_add(self.fileEntryChanged)
-        self.fileEntry.show()
+        self.file_entry = Entry(self,
+                                size_hint_weight=EXPAND_BOTH,
+                                size_hint_align=FILL_HORIZ)
+        self.file_entry.single_line_set(True)
+        self.file_entry.scrollable_set(True)
+        self.file_entry.callback_changed_user_add(self.cb_file_entry)
+        self.file_entry.show()
 
-        self.filenameBox.pack_end(fileLabel)
-        self.filenameBox.pack_end(self.fileEntry)
+        self.filename_bx.pack_end(file_label)
+        self.filename_bx.pack_end(self.file_entry)
 
         sep = Separator(self,
                         size_hint_weight=EXPAND_HORIZ,
@@ -144,86 +150,86 @@ class FileSelector(Box):
         sep.show()
 
         # Label+Entry for File Path
-        self.filepathBox = Box(self,
+        self.filepath_bx = Box(self,
                                size_hint_weight=EXPAND_HORIZ,
                                size_hint_align=FILL_HORIZ)
-        self.filepathBox.horizontal = True
-        self.filepathBox.show()
+        self.filepath_bx.horizontal = True
+        self.filepath_bx.show()
 
-        fileLabel = Label(self,
-                          size_hint_weight=(0.15, EVAS_HINT_EXPAND),
-                          size_hint_align=FILL_HORIZ)
-        fileLabel.text = "Current Folder:"
-        fileLabel.show()
+        file_label = Label(self,
+                           size_hint_weight=(0.15, EVAS_HINT_EXPAND),
+                           size_hint_align=FILL_HORIZ)
+        file_label.text = "Current Folder:"
+        file_label.show()
 
-        self.filepathEntry = Entry(self,
-                                   size_hint_weight=EXPAND_BOTH,
-                                   size_hint_align=FILL_HORIZ)
-        self.filepathEntry.single_line_set(True)
-        self.filepathEntry.scrollable_set(True)
-        self.filepathEntry.callback_changed_user_add(self.fileEntryChanged)
-        self.filepathEntry.callback_unfocused_add(self.filepathEditDone)
-        self.filepathEntry.callback_activated_add(self.filepathEditDone)
+        self.filepath_en = Entry(self,
+                                 size_hint_weight=EXPAND_BOTH,
+                                 size_hint_align=FILL_HORIZ)
+        self.filepath_en.single_line_set(True)
+        self.filepath_en.scrollable_set(True)
+        self.filepath_en.callback_changed_user_add(self.cb_file_entry)
+        self.filepath_en.callback_unfocused_add(self.cb_filepath_en)
+        self.filepath_en.callback_activated_add(self.cb_filepath_en)
         # Wish this worked. Doesn't seem to do anything
         # Working now EFL 1.22 ?
-        self.filepathEntry.input_hint_set(ELM_INPUT_HINT_AUTO_COMPLETE)
+        self.filepath_en.input_hint_set(ELM_INPUT_HINT_AUTO_COMPLETE)
 
-        if defaultPath and os.path.isdir(defaultPath):
-            startPath = defaultPath
+        if default_path and os.path.isdir(default_path):
+            start = default_path
         else:
-            startPath = self.home
-        self.filepathEntry.show()
+            start = self.home
+        self.filepath_en.show()
 
-        self.filepathBox.pack_end(fileLabel)
-        self.filepathBox.pack_end(self.filepathEntry)
+        self.filepath_bx.pack_end(file_label)
+        self.filepath_bx.pack_end(self.filepath_en)
 
-        self.autocompleteHover = Hoversel(self, hover_parent=self)
-        self.autocompleteHover.callback_selected_add(self.autocompleteSelected)
-        self.autocompleteHover.show()
+        self.autocomplete_hover = Hoversel(self, hover_parent=self)
+        self.autocomplete_hover.callback_selected_add(self.cb_hover)
+        self.autocomplete_hover.show()
 
-        self.fileSelectorBox = Panes(self,
-                                     content_left_size=0.3,
-                                     size_hint_weight=EXPAND_BOTH,
-                                     size_hint_align=FILL_BOTH)
-        self.fileSelectorBox.show()
-        """Bookmarks Box contains:
-
-            - Button - Up Arrow
-            - List - Home/Desktop/Root/GTK bookmarks
-            - Box
-            -- Button - Add Bookmark
-            -- Button - Remove Bookmark"""
-        self.bookmarkBox = Box(self,
+        self.file_selector_bx = Panes(self,
+                                      content_left_size=0.3,
+                                      size_hint_weight=EXPAND_BOTH,
+                                      size_hint_align=FILL_BOTH)
+        self.file_selector_bx.show()
+        # Bookmarks Box contains:
+        #
+        # - Button - Up Arrow
+        # - List - Home/Desktop/Root/GTK bookmarks
+        # - Box
+        # -- Button - Add Bookmark
+        # -- Button - Remove Bookmark
+        self.bookmark_bx = Box(self,
                                size_hint_weight=(0.3, EVAS_HINT_EXPAND),
                                size_hint_align=FILL_BOTH)
-        self.bookmarkBox.show()
+        self.bookmark_bx.show()
 
-        upIcon = Icon(self,
-                      size_hint_weight=EXPAND_BOTH,
-                      size_hint_align=FILL_BOTH,
-                      order_lookup=ELM_ICON_LOOKUP_THEME)
-        upIcon.standard_set("arrow-up")
-        upIcon.show()
+        up_ic = Icon(self,
+                     size_hint_weight=EXPAND_BOTH,
+                     size_hint_align=FILL_BOTH,
+                     order_lookup=ELM_ICON_LOOKUP_THEME)
+        up_ic.standard_set("arrow-up")
+        up_ic.show()
 
-        self.upButton = Button(self,
-                               size_hint_weight=EXPAND_HORIZ,
-                               size_hint_align=FILL_HORIZ,
-                               content=upIcon)
-        self.upButton.text = "Up"
-        self.upButton.callback_pressed_add(self.upButtonPressed)
-        self.upButton.show()
+        self.up_btn = Button(self,
+                             size_hint_weight=EXPAND_HORIZ,
+                             size_hint_align=FILL_HORIZ,
+                             content=up_ic)
+        self.up_btn.text = "Up"
+        self.up_btn.callback_pressed_add(self.cb_up_btn)
+        self.up_btn.show()
 
-        self.bookmarksList = List(self,
+        self.bookmarks_lst = List(self,
                                   size_hint_weight=EXPAND_BOTH,
                                   size_hint_align=FILL_BOTH)
-        self.bookmarksList.callback_activated_add(self.bookmarkDoubleClicked)
-        self.bookmarksList.show()
+        self.bookmarks_lst.callback_activated_add(self.cb_bookmarks_lst)
+        self.bookmarks_lst.show()
 
-        self.bookmarkModBox = Box(self,
-                                  size_hint_weight=EXPAND_HORIZ,
-                                  size_hint_align=FILL_HORIZ)
-        self.bookmarkModBox.horizontal = True
-        self.bookmarkModBox.show()
+        self.bookmark_modbox = Box(self,
+                                   size_hint_weight=EXPAND_HORIZ,
+                                   size_hint_align=FILL_HORIZ)
+        self.bookmark_modbox.horizontal = True
+        self.bookmark_modbox.show()
 
         con = Icon(self,
                    size_hint_weight=EXPAND_BOTH,
@@ -231,13 +237,13 @@ class FileSelector(Box):
         con.standard_set("list-add")
         con.show()
 
-        self.addButton = Button(self,
-                                size_hint_weight=EXPAND_HORIZ,
-                                size_hint_align=FILL_HORIZ,
-                                content=con)
-        self.addButton.callback_pressed_add(self.addButtonPressed)
-        self.addButton.disabled = True
-        self.addButton.show()
+        self.add_btn = Button(self,
+                              size_hint_weight=EXPAND_HORIZ,
+                              size_hint_align=FILL_HORIZ,
+                              content=con)
+        self.add_btn.callback_pressed_add(self.cb_add_btn)
+        self.add_btn.disabled = True
+        self.add_btn.show()
 
         con = Icon(self,
                    size_hint_weight=EXPAND_BOTH,
@@ -245,88 +251,87 @@ class FileSelector(Box):
         con.standard_set("list-remove")
         con.show()
 
-        self.removeButton = Button(self,
-                                   size_hint_weight=EXPAND_HORIZ,
-                                   size_hint_align=FILL_HORIZ,
-                                   content=con)
-        self.removeButton.callback_pressed_add(self.removeButtonPressed)
-        self.removeButton.disabled = True
-        self.removeButton.show()
+        self.rm_btn = Button(self,
+                             size_hint_weight=EXPAND_HORIZ,
+                             size_hint_align=FILL_HORIZ,
+                             content=con)
+        self.rm_btn.callback_pressed_add(self.cb_remove)
+        self.rm_btn.disabled = True
+        self.rm_btn.show()
 
-        self.bookmarkModBox.pack_end(self.addButton)
-        self.bookmarkModBox.pack_end(self.removeButton)
+        self.bookmark_modbox.pack_end(self.add_btn)
+        self.bookmark_modbox.pack_end(self.rm_btn)
 
-        self.bookmarkBox.pack_end(self.upButton)
-        self.bookmarkBox.pack_end(self.bookmarksList)
-        self.bookmarkBox.pack_end(self.bookmarkModBox)
+        self.bookmark_bx.pack_end(self.up_btn)
+        self.bookmark_bx.pack_end(self.bookmarks_lst)
+        self.bookmark_bx.pack_end(self.bookmark_modbox)
 
         # Directory List
-        self.fileListBox = Box(self,
-                               size_hint_weight=EXPAND_BOTH,
-                               size_hint_align=FILL_BOTH)
-        self.fileListBox.show()
+        self.file_list_bx = Box(self,
+                                size_hint_weight=EXPAND_BOTH,
+                                size_hint_align=FILL_BOTH)
+        self.file_list_bx.show()
 
-        self.fileSortButton = Button(self,
-                                     size_hint_weight=EXPAND_HORIZ,
-                                     size_hint_align=FILL_HORIZ)
-        self.fileSortButton.text = u"⬆ Name"
-        self.fileSortButton.callback_pressed_add(self.sortData)
-        self.fileSortButton.show()
+        self.file_sort_btn = Button(self,
+                                    size_hint_weight=EXPAND_HORIZ,
+                                    size_hint_align=FILL_HORIZ)
+        self.file_sort_btn.text = u"⬆ Name"
+        self.file_sort_btn.callback_pressed_add(self.cb_sort)
+        self.file_sort_btn.show()
 
-        self.fileList = Genlist(self,
+        self.file_lst = Genlist(self,
                                 size_hint_weight=EXPAND_BOTH,
                                 size_hint_align=FILL_BOTH,
                                 homogeneous=True,
                                 mode=ELM_LIST_COMPRESS)
-        self.fileList.callback_activated_add(self.fileDoubleClicked)
-        self.fileList.show()
+        self.file_lst.callback_activated_add(self.cb_file_lst)
+        self.file_lst.show()
 
-        self.previewImage = previewImage = Image(self)
-        # previewImage.size_hint_weight = EXPAND_BOTH
-        previewImage.size_hint_align = FILL_BOTH
-        previewImage.show()
+        self.preview = preview = Image(self)
+        preview.size_hint_align = FILL_BOTH
+        preview.show()
 
-        self.fileListBox.pack_end(self.fileSortButton)
-        self.fileListBox.pack_end(self.fileList)
-        self.fileListBox.pack_end(self.previewImage)
+        self.file_list_bx.pack_end(self.file_sort_btn)
+        self.file_list_bx.pack_end(self.file_lst)
+        self.file_list_bx.pack_end(self.preview)
 
-        self.fileSelectorBox.part_content_set("left", self.bookmarkBox)
-        self.fileSelectorBox.part_content_set("right", self.fileListBox)
+        self.file_selector_bx.part_content_set("left", self.bookmark_bx)
+        self.file_selector_bx.part_content_set("right", self.file_list_bx)
 
         # Cancel and Save/Open button
-        self.buttonBox = Box(self,
+        self.button_bx = Box(self,
                              size_hint_weight=EXPAND_HORIZ,
                              size_hint_align=(1.0, 0.5))
-        self.buttonBox.horizontal = True
-        self.buttonBox.show()
+        self.button_bx.horizontal = True
+        self.button_bx.show()
 
-        self.actionIcon = Icon(self,
-                               size_hint_weight=EXPAND_BOTH,
-                               size_hint_align=FILL_BOTH)
-        self.actionIcon.standard_set("document-save")
-        self.actionIcon.show()
+        self.action_ic = Icon(self,
+                              size_hint_weight=EXPAND_BOTH,
+                              size_hint_align=FILL_BOTH)
+        self.action_ic.standard_set("document-save")
+        self.action_ic.show()
 
-        self.actionButton = Button(self,
-                                   size_hint_weight=(0.0, 0.0),
-                                   size_hint_align=(1.0, 0.5),
-                                   content=self.actionIcon)
-        self.actionButton.text = "Save  "
-        self.actionButton.callback_pressed_add(self.actionButtonPressed)
-        self.actionButton.show()
+        self.action_btn = Button(self,
+                                 size_hint_weight=(0.0, 0.0),
+                                 size_hint_align=(1.0, 0.5),
+                                 content=self.action_ic)
+        self.action_btn.text = "Save  "
+        self.action_btn.callback_pressed_add(self.cb_action_btn)
+        self.action_btn.show()
 
-        cancelIcon = Icon(self,
-                          size_hint_weight=EXPAND_BOTH,
-                          size_hint_align=FILL_BOTH)
-        cancelIcon.standard_set("application-exit")
-        cancelIcon.show()
+        cancel_ic = Icon(self,
+                         size_hint_weight=EXPAND_BOTH,
+                         size_hint_align=FILL_BOTH)
+        cancel_ic.standard_set("application-exit")
+        cancel_ic.show()
 
-        self.cancelButton = Button(self,
-                                   size_hint_weight=(0.0, 0.0),
-                                   size_hint_align=(1.0, 0.5),
-                                   content=cancelIcon)
-        self.cancelButton.text = "Cancel  "
-        self.cancelButton.callback_pressed_add(self.cancelButtonPressed)
-        self.cancelButton.show()
+        self.cancel_btn = Button(self,
+                                 size_hint_weight=(0.0, 0.0),
+                                 size_hint_align=(1.0, 0.5),
+                                 content=cancel_ic)
+        self.cancel_btn.text = "Cancel  "
+        self.cancel_btn.callback_pressed_add(self.cb_cancel_btn)
+        self.cancel_btn.show()
 
         con = Icon(self,
                    size_hint_weight=EXPAND_BOTH,
@@ -334,14 +339,13 @@ class FileSelector(Box):
         con.standard_set("edit-find")
         con.show()
 
-        self.toggleHiddenButton = Button(self,
-                                         size_hint_weight=(0.0, 0.0),
-                                         size_hint_align=(1.0, 0.5),
-                                         content=con)
-        self.toggleHiddenButton.text = "Toggle Hidden  "
-        self.toggleHiddenButton.callback_pressed_add(
-            self.toggleHiddenButtonPressed)
-        self.toggleHiddenButton.show()
+        self.hidden_btn = Button(self,
+                                 size_hint_weight=(0.0, 0.0),
+                                 size_hint_align=(1.0, 0.5),
+                                 content=con)
+        self.hidden_btn.text = "Toggle Hidden  "
+        self.hidden_btn.callback_pressed_add(self.cb_toggle_hidden)
+        self.hidden_btn.show()
 
         con = Icon(self,
                    size_hint_weight=EXPAND_BOTH,
@@ -349,100 +353,106 @@ class FileSelector(Box):
         con.standard_set("folder-new")
         con.show()
 
-        self.createFolderButton = Button(self,
-                                         size_hint_weight=(0.0, 0.0),
-                                         size_hint_align=(1.0, 0.5),
-                                         content=con)
-        self.createFolderButton.text = "Create Folder  "
-        self.createFolderButton.callback_pressed_add(
-            self.createFolderButtonPressed)
-        self.createFolderButton.show()
+        self.create_dir_btn = Button(self,
+                                     size_hint_weight=(0.0, 0.0),
+                                     size_hint_align=(1.0, 0.5),
+                                     content=con)
+        self.create_dir_btn.text = "Create Folder  "
+        self.create_dir_btn.callback_pressed_add(
+            self.cb_create_dir)
+        self.create_dir_btn.show()
 
-        self.buttonBox.pack_end(self.createFolderButton)
-        self.buttonBox.pack_end(self.toggleHiddenButton)
-        self.buttonBox.pack_end(self.cancelButton)
-        self.buttonBox.pack_end(self.actionButton)
+        self.button_bx.pack_end(self.create_dir_btn)
+        self.button_bx.pack_end(self.hidden_btn)
+        self.button_bx.pack_end(self.cancel_btn)
+        self.button_bx.pack_end(self.action_btn)
 
-        self.pack_end(self.filenameBox)
+        self.pack_end(self.filename_bx)
         self.pack_end(sep)
-        self.pack_end(self.filepathBox)
-        self.pack_end(self.autocompleteHover)
-        self.pack_end(self.fileSelectorBox)
-        self.pack_end(self.buttonBox)
+        self.pack_end(self.filepath_bx)
+        self.pack_end(self.autocomplete_hover)
+        self.pack_end(self.file_selector_bx)
+        self.pack_end(self.button_bx)
 
-        self.populateBookmarks()
+        self.populate_bookmarks()
 
-        self.createPopup = Popup(self)
-        self.createPopup.part_text_set("title,text", "Create Folder:")
+        self.create_popup = Popup(self)
+        self.create_popup.part_text_set("title,text", "Create Folder:")
 
-        self.createEn = en = Entry(self,
-                                   size_hint_weight=EXPAND_HORIZ,
-                                   size_hint_align=FILL_HORIZ)
-        en.single_line_set(True)
-        en.scrollable_set(True)
-        en.show()
+        self.create_en = Entry(self,
+                               size_hint_weight=EXPAND_HORIZ,
+                               size_hint_align=FILL_HORIZ)
+        self.create_en.single_line_set(True)
+        self.create_en.scrollable_set(True)
+        self.create_en.show()
 
-        self.createPopup.content = en
+        self.create_popup.content = self.create_en
 
-        bt = Button(self, text="Create")
-        bt.callback_clicked_add(self.createFolder)
-        self.createPopup.part_content_set("button1", bt)
+        bt0 = Button(self, text="Create")
+        bt0.callback_clicked_add(self.cb_create_folder)
+        self.create_popup.part_content_set("button1", bt0)
+        bt1 = Button(self, text="Cancel")
+        bt1.callback_clicked_add(self.cb_close_popup)
+        self.create_popup.part_content_set("button2", bt1)
 
-        bt2 = Button(self, text="Cancel")
-        bt2.callback_clicked_add(self.closePopup)
-        self.createPopup.part_content_set("button2", bt2)
+        self.recent = None  # keeps pylint happy:
+        if default_populate:
+            self.populate_files(start)
 
-        if defaultPopulate:
-            self.populateFiles(startPath)
+    def dir_only_set(self, value):
+        '''Set folder only attribute and adjust display'''
+        self.dir_only = value
 
-    def folderOnlySet(self, ourValue):
-        self.folderOnly = ourValue
-
-        if not self.folderOnly:
-            self.filenameBox.show()
+        if not self.dir_only:
+            self.filename_bx.show()
         else:
-            self.filenameBox.hide()
+            self.filename_bx.hide()
 
-    def createFolder(self, obj):
-        newDir = "%s%s" % (self.currentDirectory, self.createEn.text)
-        os.makedirs(newDir)
-        self.closePopup()
-        self.populateFiles(self.currentDirectory)
+    def cb_create_folder(self, obj):
+        '''Create a new folder'''
+        new = f'{self.cur_dir}{self.create_en.text}'
+        os.makedirs(new)
+        self.cb_close_popup()
+        self.populate_files(self.cur_dir)
 
-    def createFolderButtonPressed(self, obj):
-        self.createEn.text = ""
-        self.createPopup.show()
-        self.createEn.select_all()
+    def cb_create_dir(self, obj):
+        '''Open popup to create a new folder'''
+        self.create_en.text = ""
+        self.create_popup.show()
+        self.create_en.select_all()
 
-    def closePopup(self, btn=None):
-        self.createPopup.hide()
+    def cb_close_popup(self, btn=None):
+        '''Close popup'''
+        self.create_popup.hide()
 
+    # pylint: disable=unused-argument
     def shutdown(self, obj=None):
+        '''Cleanup function for FileSelector widget shutdown'''
         self._timer.delete()
-        self.threadedFunction.shutdown()
+        self.threaded_fn.shutdown()
 
-    def sortData(self, btn):
-        self.sortReverse = not self.sortReverse
-
-        if self.sortReverse:
-            self.fileSortButton.text = u"⬇ Name"
+    def cb_sort(self, btn):
+        '''callback for sort button'''
+        self.sort_reverse = not self.sort_reverse
+        if self.sort_reverse:
+            self.file_sort_btn.text = u'⬇ Name'
         else:
-            self.fileSortButton.text = u"⬆ Name"
+            self.file_sort_btn.text = u'⬆ Name'
 
-        self.populateFiles(self.currentDirectory)
+        self.populate_files(self.cur_dir)
 
-    def populateBookmarks(self):
-
+    def populate_bookmarks(self):
+        '''Fill Bookamrks List'''
         con = Icon(self,
                    size_hint_weight=EXPAND_BOTH,
                    size_hint_align=FILL_BOTH)
         con.standard_set("document-open-recent")
         con.show()
-        it = self.bookmarksList.item_append("Recent", icon=con)
-        it.data['path'] = "recent:///"
+        cur_item = self.bookmarks_lst.item_append("Recent", icon=con)
+        cur_item.data['path'] = "recent:///"
 
-        it = self.bookmarksList.item_append("")
-        it.separator_set(True)
+        cur_item = self.bookmarks_lst.item_append("")
+        cur_item.separator_set(True)
 
         con = Icon(self,
                    size_hint_weight=EXPAND_BOTH,
@@ -450,8 +460,8 @@ class FileSelector(Box):
         con.standard_set("user-home")
         con.show()
 
-        it = self.bookmarksList.item_append("Home", icon=con)
-        it.data["path"] = self.home
+        cur_item = self.bookmarks_lst.item_append("Home", icon=con)
+        cur_item.data["path"] = self.home
 
         if os.path.isdir(self.desktop):
             con = Icon(self,
@@ -460,8 +470,8 @@ class FileSelector(Box):
             con.standard_set("user-desktop")
             con.show()
 
-            it = self.bookmarksList.item_append("Desktop", icon=con)
-            it.data["path"] = self.desktop
+            cur_item = self.bookmarks_lst.item_append("Desktop", icon=con)
+            cur_item.data["path"] = self.desktop
 
         con = Icon(self,
                    size_hint_weight=EXPAND_BOTH,
@@ -469,339 +479,339 @@ class FileSelector(Box):
         con.standard_set("drive-harddisk")
         con.show()
 
-        it = self.bookmarksList.item_append("Root", icon=con)
-        it.data["path"] = self.root
+        cur_item = self.bookmarks_lst.item_append("Root", icon=con)
+        cur_item.data["path"] = self.root
 
-        it = self.bookmarksList.item_append("")
-        it.separator_set(True)
+        cur_item = self.bookmarks_lst.item_append("")
+        cur_item.separator_set(True)
 
-        for bk in self.getGTKBookmarks():
+        for url in self.get_gtk_bookmarks():
             con = Icon(self,
                        size_hint_weight=EXPAND_BOTH,
                        size_hint_align=FILL_BOTH)
             con.standard_set("folder")
             con.show()
-            it = self.bookmarksList.item_append(bk.split("/")[-1], icon=con)
-            it.data["path"] = bk[7:]
+            cur_item = self.bookmarks_lst.item_append(url.split("/")[-1], icon=con)
+            cur_item.data["path"] = url[7:]
 
-    def populateFile(self):
-        pen_file = len(self.pendingFiles)
+    def populate_file(self):
+        '''Add Pending File to Files list'''
+        pen_file = len(self.pending_files)
         if pen_file:
             for _ in range(int(math.sqrt(pen_file))):
-                ourPath, d, isDir = self.pendingFiles.popleft()
-                self.packFileFolder(ourPath, d, isDir)
+                path, name, is_dir = self.pending_files.popleft()
+                self.pack_all(path, name, is_dir)
 
         # else:
         #    self._timer.freeze()
 
         return True
 
-    def populateFiles(self, ourPath):
-        self.autocompleteHover.hover_end()
+    def populate_files(self, path):
+        '''Start threaded FN to get dir contents'''
+        self.autocomplete_hover.hover_end()
 
-        self.pendingFiles.clear()
+        self.pending_files.clear()
 
-        if ourPath[:-1] != "/":
-            ourPath = ourPath + "/"
+        if path[:-1] != "/":
+            path = path + "/"
+        if path != self.filepath_en.text or not self.show_hidden:
+            self.adding_hidden = False
 
-        if ourPath != self.filepathEntry.text or not self.showHidden:
-            self.addingHidden = False
+            if self.cb_dir_change:
+                self.cb_dir_change(path)
 
-            if self.directoryChangeCallback:
-                self.directoryChangeCallback(ourPath)
-
-            del self.currentSubFolders[:]
-            del self.currentFiles[:]
-            self.fileList.clear()
+            del self.cur_subdirs[:]
+            del self.cur_files[:]
+            self.file_lst.clear()
         else:
-            self.addingHidden = True
+            self.adding_hidden = True
 
-        self.filepathEntry.text = ourPath.replace("//", "/")
-        self.currentDirectory = ourPath.replace("//", "/")
+        self.filepath_en.text = path.replace("//", "/")
+        self.cur_dir = path.replace("//", "/")
 
-        self.threadedFunction.run(self.getFolderContents)
-        # self._timer.thaw()
+        self.threaded_fn.run(self.get_dir_contents)
 
-    def getFolderContents(self):
-        ourPath = self.currentDirectory
-
-        if ourPath == 'recent://':
+    def get_dir_contents(self):
+        '''Add Folder contents to pending files'''
+        path = self.cur_dir
+        if path == 'recent://':
             self.recent = Bookmarks()
             data = list(self.recent.dict.keys())
-            for ourFile in data:
-                # p = self.recent[ourFile]
-                self.pendingFiles.append([ourPath, ourFile, False])
+            for cur in data:
+                self.pending_files.append([path, cur, False])
             return
+        data = os.listdir(str(path))
 
-        data = os.listdir(str(ourPath))
-
-        sortedData = []
-
-        for d in data:
-            isDir = os.path.isdir("%s%s" % (ourPath, d))
-
-            if isDir:
-                self.currentSubFolders.append(d)
-                if self.sortReverse:
-                    sortedData.append([1, d])
+        sorted_data = []
+        for name in data:
+            is_dir = os.path.isdir(f'{path}{name}')
+            if is_dir:
+                self.cur_subdirs.append(name)
+                if self.sort_reverse:
+                    sorted_data.append([1, name])
                 else:
-                    sortedData.append([0, d])
+                    sorted_data.append([0, name])
             else:
-                self.currentFiles.append(d)
-                if self.sortReverse:
-                    sortedData.append([0, d])
+                self.cur_files.append(name)
+                if self.sort_reverse:
+                    sorted_data.append([0, name])
                 else:
-                    sortedData.append([1, d])
+                    sorted_data.append([1, name])
 
-        sortedData.sort(reverse=self.sortReverse)
-        for ourFile in sortedData:
-            d = ourFile[1]
-            isDir = ourFile[0] if self.sortReverse else not ourFile[0]
-            if self.addingHidden and d[0] == ".":
-                self.pendingFiles.append([ourPath, d, isDir])
-            elif (d[0] != "." or self.showHidden) and not self.addingHidden:
-                self.pendingFiles.append([ourPath, d, isDir])
+        sorted_data.sort(reverse=self.sort_reverse)
+        for cur in sorted_data:
+            name = cur[1]
+            is_dir = cur[0] if self.sort_reverse else not cur[0]
+            if self.adding_hidden and name[0] == ".":
+                self.pending_files.append([path, name, is_dir])
+            elif (name[0] != "." or self.show_hidden) and not self.adding_hidden:
+                self.pending_files.append([path, name, is_dir])
 
-    def packFileFolder(self, ourPath, d, isDir):
-        if isDir:
-            li = GenlistItem(item_data={
+    def pack_all(self, path, name, is_dir):
+        '''Append to genlist'''
+        if is_dir:
+            gen_lst_it = GenlistItem(item_data={
                 "type": "dir",
-                "path": ourPath,
-                "d": d
+                "path": path,
+                "d": name
             },
-                             item_class=dirglic,
-                             func=self.listItemSelected)
+                                     item_class=DIRGLIC,
+                                     func=self.list_it_selected)
         else:
-            li = GenlistItem(item_data={
+            gen_lst_it = GenlistItem(item_data={
                 "type": "file",
-                "path": ourPath,
-                "d": d
+                "path": path,
+                "d": name
             },
-                             item_class=fileglic,
-                             func=self.listItemSelected)
+                                     item_class=FILEGLIC,
+                                     func=self.list_it_selected)
+        gen_lst_it.append_to(self.file_lst)
 
-        li.append_to(self.fileList)
-        # self.fileList.go()
-        # print("Adding: %s %s %s"%(ourPath, d, isDir))
-
-    def fileDoubleClicked(self, obj, item=None, eventData=None):
+    def cb_file_lst(self, obj, item=None, event=None):
+        '''File list double clicked callback'''
         if item.data["type"] == "dir":
-            self.addButton.disabled = True
-            self.removeButton.disabled = True
-            self.populateFiles(item.data["path"] + item.text)
+            self.add_btn.disabled = True
+            self.rm_btn.disabled = True
+            self.populate_files(item.data["path"] + item.text)
         else:
-            self.actionButtonPressed(self.actionButton)
+            self.cb_action_btn(self.action_btn)
 
-    def getGTKBookmarks(self):
+    # pylint: disable=no-self-use
+    def get_gtk_bookmarks(self):
+        '''Read GTK bookmarks'''
         try:
             with open(os.path.expanduser('~/.config/gtk-3.0/bookmarks'),
-                      'r') as f:
-                ourBks = []
-                for x in f:
-                    x = x.split(" ")[0]
-                    x = x.replace("%20", " ")
-                    x = x.strip()
-                    ourBks.append(x)
-                return ourBks
+                      'r') as gtk_bk:
+                bks = []
+                for url in gtk_bk:
+                    url = url.split(" ")[0]
+                    url = url.replace("%20", " ")
+                    url = url.strip()
+                    bks.append(url)
+                return bks
         except IOError:
             return []
 
-    def bookmarkDoubleClicked(self, obj, item=None, eventData=None):
+    def cb_bookmarks_lst(self, obj, item=None, event=None):
+        '''Bookamrk list item double clicked callback'''
         item.selected_set(False)
-        self.addButton.disabled = True
-        self.removeButton.disabled = True
-        self.populateFiles(item.data["path"])
+        self.add_btn.disabled = True
+        self.rm_btn.disabled = True
+        self.populate_files(item.data["path"])
 
-    def listItemSelected(self, item, gl, data):
+    def list_it_selected(self, item, gen_lst, data):
+        '''Genlist item selected'''
         if item.data["type"] == "dir":
-            self.directorySelected(item)
+            self.dir_selected(item)
         else:
-            self.fileSelected(item.text)
+            self.file_selected(item.text)
             item.selected_set(False)
 
-    def fileSelected(self, ourFile):
-        self.fileEntry.text = ourFile
-        self.addButton.disabled = True
-        self.removeButton.disabled = True
-        self.selectedFolder = None
+    def file_selected(self, cur):
+        '''File was selected, update everything'''
+        self.file_entry.text = cur
+        self.add_btn.disabled = True
+        self.rm_btn.disabled = True
+        self.selected_dir = None
 
         # Update image preview if an image is selected
-        if ourFile[-3:] in ["jpg", "png", "gif"]:
-            if self.filepathEntry.text == "recent://":
-                self.previewImage.file_set(self.recent[ourFile])
+        if cur[-3:] in ['jpg', 'png', 'gif']:
+            if self.filepath_en.text == 'recent://':
+                self.preview.file_set(self.recent[cur])
             else:
-                self.previewImage.file_set("%s/%s" %
-                                           (self.filepathEntry.text, ourFile))
-            self.previewImage.size_hint_weight = (1.0, 0.4)
+                self.preview.file_set(f'{self.filepath_en.text}/{cur}')
+            self.preview.size_hint_weight = (1.0, 0.4)
         else:
-            self.previewImage.size_hint_weight = (0, 0)
+            self.preview.size_hint_weight = (0, 0)
 
-    def directorySelected(self, btn):
-        ourPath = btn.data["path"]
-        if btn == self.selectedFolder:
-            self.populateFiles(ourPath)
-            self.addButton.disabled = True
+    def dir_selected(self, btn):
+        '''Folder was selected, update everything'''
+        cur = btn.data['path']
+        if btn == self.selected_dir:
+            self.populate_files(cur)
+            self.add_btn.disabled = True
         else:
-            self.selectedFolder = btn
-
-            currentMarks = self.getGTKBookmarks()
-
-            toAppend = "file://%s%s" % (self.filepathEntry.text,
-                                        self.selectedFolder.text)
-
-            if toAppend not in currentMarks:
-                self.addButton.disabled = False
-                self.removeButton.disabled = True
+            self.selected_dir = btn
+            gtk_bks = self.get_gtk_bookmarks()
+            to_append = f'file://{self.filepath_en.text}{self.selected_dir.text}'
+            if to_append not in gtk_bks:
+                self.add_btn.disabled = False
+                self.rm_btn.disabled = True
             else:
-                self.addButton.disabled = True
-                self.removeButton.disabled = False
+                self.add_btn.disabled = True
+                self.rm_btn.disabled = False
 
-    def upButtonPressed(self, btn):
-        ourSplit = self.filepathEntry.text.split("/")
-        del ourSplit[-1]
-        del ourSplit[-1]
-        self.populateFiles("/".join(ourSplit))
+    def cb_up_btn(self, btn):
+        '''Callback for dir up button'''
+        cur = self.filepath_en.text.split("/")
+        del cur[-1]
+        del cur[-1]
+        self.populate_files("/".join(cur))
 
-    def addButtonPressed(self, btn):
-        toAppend = "file://%s%s" % (self.filepathEntry.text,
-                                    self.selectedFolder.text.replace(
-                                        " ", "%20"))
+    def cb_add_btn(self, btn):
+        '''Add dir button pressed'''
+        cur = "file://%s%s" % (self.filepath_en.text,
+                               self.selected_dir.text.replace(' ', '%20'))
 
         con = Icon(self,
                    size_hint_weight=EXPAND_BOTH,
                    size_hint_align=FILL_BOTH)
         con.standard_set("gtk-directory")
         con.show()
-        it = self.bookmarksList.item_append(self.selectedFolder.text, icon=con)
-        it.data["path"] = "%s%s" % (self.filepathEntry.text,
-                                    self.selectedFolder.text)
+        current = self.bookmarks_lst.item_append(self.selected_dir.text, icon=con)
+        current.data["path"] = "%s%s" % (self.filepath_en.text,
+                                         self.selected_dir.text)
 
-        self.bookmarksList.go()
+        self.bookmarks_lst.go()
 
-        self.addButton.disabled = True
-        self.removeButton.disabled = False
+        self.add_btn.disabled = True
+        self.rm_btn.disabled = False
 
-        with open(os.path.expanduser('~/.config/gtk-3.0/bookmarks'), 'a') as f:
-            f.write(toAppend + " " + self.selectedFolder.text + "\n")
+        with open(os.path.expanduser('~/.config/gtk-3.0/bookmarks'), 'a') as gtk_bk:
+            gtk_bk.write(cur + ' ' + self.selected_dir.text + '\n')
 
-    def removeButtonPressed(self, btn):
-        toRemove = "file://%s%s" % (self.filepathEntry.text,
-                                    self.selectedFolder.text)
+    def cb_remove(self, btn):
+        '''Remove button pressed callback'''
+        cur = f'file://{self.filepath_en.text}{self.selected_dir.text}'
+        bks = self.get_gtk_bookmarks()
+        bks.remove(cur)
 
-        bks = self.getGTKBookmarks()
-        bks.remove(toRemove)
+        with open(os.path.expanduser('~/.config/gtk-3.0/bookmarks'), 'w') as gtk_bk:
+            for url in bks:
+                name = url.split('/')[-1]
+                url = url.replace(' ', '%20')
+                gtk_bk.write(url + ' ' + name + '\n')
 
-        with open(os.path.expanduser('~/.config/gtk-3.0/bookmarks'), 'w') as f:
-            for b in bks:
-                bName = b.split("/")[-1]
-                b = b.replace(" ", "%20")
-                f.write(b + " " + bName + "\n")
+        self.bookmarks_lst.clear()
+        self.populate_bookmarks()
 
-        self.bookmarksList.clear()
-        self.populateBookmarks()
+        self.add_btn.disabled = False
+        self.rm_btn.disabled = True
 
-        self.addButton.disabled = False
-        self.removeButton.disabled = True
-
-    def setMode(self, ourMode):
-        self.mode = ourMode.lower()
-        self.actionButton.text = "%s  " % ourMode
-        self.actionIcon.standard_set("document-%s" % ourMode.lower())
+    def set_mode(self, mode):
+        '''Set FileSelector mode: save or open'''
+        self.mode = mode.lower()
+        self.action_btn.text = f'{mode}  '
+        self.action_ic.standard_set(f'document-{mode.lower()}')
 
         if self.mode != "save":
-            self.createFolderButton.hide()
+            self.create_dir_btn.hide()
         else:
-            self.createFolderButton.show()
+            self.create_dir_btn.show()
 
-    def eventsCb(self, obj, src, event_type, event):
+    def cb_events(self, obj, src, event_type, event):
+        '''Keyboard event callback: Watch key presses for ctrl+l to select entry'''
         if event.modifier_is_set(
                 "Control") and event_type == EVAS_CALLBACK_KEY_DOWN:
             if event.key.lower() == "l":
-                self.filepathEntry.focus_set(True)
-                self.filepathEntry.cursor_end_set()
+                self.filepath_en.focus_set(True)
+                self.filepath_en.cursor_end_set()
 
-    def toggleHiddenButtonPressed(self, btn):
-        self.showHidden = not self.showHidden
-        self.populateFiles(self.filepathEntry.text)
+    def cb_toggle_hidden(self, btn):
+        '''Toggle hidden files and folders'''
+        self.show_hidden = not self.show_hidden
+        self.populate_files(self.filepath_en.text)
 
-    def toggleHidden(self):
-        self.showHidden = not self.showHidden
-        self.populateFiles(self.filepathEntry.text)
+    def callback_cancel_add(self, callback):
+        '''Add a cancel callback'''
+        self.cancel_cb = callback
 
-    def callback_cancel_add(self, cb):
-        self.cancelCallback = cb
+    def callback_activated_add(self, callback):
+        '''Add an action callback'''
+        self.action_cb = callback
 
-    def callback_activated_add(self, cb):
-        self.actionCallback = cb
+    def callback_directory_open_add(self, callback):
+        '''Add an open folder callback'''
+        self.cb_dir_change = callback
 
-    def callback_directory_open_add(self, cb):
-        self.directoryChangeCallback = cb
+    def cb_cancel_btn(self, btn):
+        '''Cancel button callback'''
+        if self.cancel_cb:
+            self.cancel_cb(self)
 
-    def cancelButtonPressed(self, btn):
-        if self.cancelCallback:
-            self.cancelCallback(self)
-
-    def actionButtonPressed(self, btn):
-        if self.actionCallback:
-            if not self.folderOnly and self.fileEntry.text:
-                if self.filepathEntry.text == "recent://":
-                    self.actionCallback(self, self.recent[self.fileEntry.text])
+    def cb_action_btn(self, btn):
+        '''Action button callback'''
+        if self.action_cb:
+            if not self.dir_only and self.file_entry.text:
+                if self.filepath_en.text == "recent://":
+                    self.action_cb(self, self.recent[self.file_entry.text])
                 else:
-                    self.actionCallback(
+                    self.action_cb(
                         self,
-                        "%s%s" % (self.filepathEntry.text, self.fileEntry.text))
-            elif self.folderOnly:
-                self.actionCallback(self, "%s" % (self.filepathEntry.text))
+                        "%s%s" % (self.filepath_en.text, self.file_entry.text))
+            elif self.dir_only:
+                self.action_cb(self, "%s" % (self.filepath_en.text))
 
-    def fileEntryChanged(self, en):
-        typed = en.text.split("/")[-1]
-
-        newList = []
-
-        self.focusedEntry = en
-
-        if en == self.filepathEntry:
-            for x in self.currentSubFolders:
-                if typed in x:
-                    if len(newList) < 10:
-                        newList.append(x)
+    def cb_file_entry(self, entry):
+        '''File entry callback'''
+        typed = entry.text.split("/")[-1]
+        new_lst = []
+        self.focused_entry = entry
+        if entry == self.filepath_en:
+            for name in self.cur_subdirs:
+                if typed in name:
+                    if len(new_lst) < 10:
+                        new_lst.append(name)
                     else:
                         break
         else:
-            for x in self.currentFiles:
-                if typed in x:
-                    if len(newList) < 10:
-                        newList.append(x)
+            for name in self.cur_files:
+                if typed in name:
+                    if len(new_lst) < 10:
+                        new_lst.append(name)
                     else:
                         break
 
-        if self.autocompleteHover.expanded_get():
-            self.autocompleteHover.hover_end()
+        if self.autocomplete_hover.expanded_get():
+            self.autocomplete_hover.hover_end()
+        self.autocomplete_hover.clear()
 
-        self.autocompleteHover.clear()
+        for name in new_lst:
+            self.autocomplete_hover.item_add(name)
 
-        for x in newList:
-            self.autocompleteHover.item_add(x)
+        self.autocomplete_hover.hover_begin()
+        self.focused_entry.focus = True
 
-        self.autocompleteHover.hover_begin()
-        self.focusedEntry.focus = True
-
-    def autocompleteSelected(self, hov, item):
+    def cb_hover(self, hov, item):
+        '''Autocomplete Hover item selected callback'''
         hov.hover_end()
-        if self.focusedEntry == self.filepathEntry:
-            self.populateFiles("%s%s" % (self.currentDirectory, item.text))
-            self.filepathEntry.cursor_end_set()
+        if self.focused_entry == self.filepath_en:
+            self.populate_files(f'{self.cur_dir}{item.text}')
+            self.filepath_en.cursor_end_set()
         else:
-            self.fileEntry.text = item.text
-            self.fileEntry.cursor_end_set()
+            self.file_entry.text = item.text
+            self.file_entry.cursor_end_set()
 
-    def filepathEditDone(self, en):
-        if os.path.isdir(en.text) and en.text != self.currentDirectory:
-            self.populateFiles(en.text)
-            self.filepathEntry.cursor_end_set()
+    def cb_filepath_en(self, entry):
+        '''File Path Entry callback'''
+        if os.path.isdir(entry.text) and entry.text != self.cur_dir:
+            self.populate_files(entry.text)
+            self.filepath_en.cursor_end_set()
         else:
-            # en.text = self.currentDirectory
+            # entry.text = self.cur_dir
             pass
 
     def selected_get(self):
-        return "%s%s" % (self.filepathEntry.text, self.fileEntry.text)
+        '''Return selected'''
+        return "%s%s" % (self.filepath_en.text, self.file_entry.text)
