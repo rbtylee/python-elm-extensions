@@ -24,7 +24,7 @@ FILL_VERT = 0.5, EVAS_HINT_FILL
 
 def xdg_open(url_or_file):
     '''convenience function.'''
-    Exe('xdg-open "%s"' % url_or_file)
+    Exe(f'xdg-open "{url_or_file}"')
 
 
 class InstanceError(Exception):
@@ -40,13 +40,13 @@ class AboutWindow(Window):
     # pylint: disable=too-many-arguments, too-many-locals, too-many-statements
     def __init__(self,
                  parent,
-                 title="About",
-                 standardicon="dialog-information",
-                 version="N/A",
-                 authors="No One",
-                 licen="GPL",
-                 webaddress="",
-                 info="Something, something, turtles"):
+                 title='About',
+                 standardicon='dialog-information',
+                 version='N/A',
+                 authors='No One',
+                 licen='GPL',
+                 webaddress='',
+                 info='Something, something, turtles'):
 
         if AboutWindow.__initialized:
             raise InstanceError(
@@ -84,7 +84,7 @@ class AboutWindow(Window):
         vbox.pack_end(icon)
         icon.show()
 
-        ver_lb = Label(self, text=('Version: %s') % version)
+        ver_lb = Label(self, text=f'Version: {version}')
         vbox.pack_end(ver_lb)
         ver_lb.show()
 
