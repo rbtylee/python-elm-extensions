@@ -30,7 +30,7 @@ class EmbeddedTerminal(Box):
         frame = Frame(self,
                       size_hint_weight=EXPAND_HORIZ,
                       size_hint_align=FILL_HORIZ)
-        frame.text = "Input:"
+        frame.text = 'Input:'
         frame.autocollapse_set(True)
         frame.collapse_go(True)
         frame.show()
@@ -51,7 +51,7 @@ class EmbeddedTerminal(Box):
         self.input.show()
 
         enter_btn = Button(self)
-        enter_btn.text = "Execute"
+        enter_btn.text = 'Execute'
         enter_btn.callback_pressed_add(self.cb_enter)
         enter_btn.show()
 
