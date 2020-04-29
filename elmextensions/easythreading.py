@@ -45,4 +45,4 @@ class ThreadedFunction(object):
                 func()
             elif func == 'QUIT':
                 break
-            self._reply_queue.put("done")
+            self._reply_queue.put('done')
