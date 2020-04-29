@@ -26,7 +26,7 @@ class StandardPopup:
 
         # Add a table to hold dialog image and text to Popup
         tbl = Table(self, size_hint_weight=EXPAND_BOTH)
-        self.part_content_set("default", tbl)
+        self.part_content_set('default', tbl)
         tbl.show()
 
         # Add dialog-error Image to table
@@ -61,9 +61,9 @@ class StandardPopup:
 
         # Ok Button
         ok_btn = Button(self)
-        ok_btn.text = "Ok"
+        ok_btn.text = 'Ok'
         ok_btn.callback_clicked_add(lambda obj: self.delete())
         ok_btn.show()
 
         # add button to popup
-        self.part_content_set("button3", ok_btn)
+        self.part_content_set('button3', ok_btn)
