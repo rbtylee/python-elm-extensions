@@ -37,7 +37,7 @@ class SearchableList(Box):
         sframe = Frame(self,
                        size_hint_weight=EXPAND_HORIZ,
                        size_hint_align=FILL_HORIZ)
-        sframe.text = "Search"
+        sframe.text = 'Search'
         self.search = search = Entry(self)
         search.single_line = True
         search.callback_changed_add(self.cb_search)
