@@ -1,5 +1,5 @@
 import efl.elementary as elm
-elm.init()
+
 from efl.elementary.window import StandardWindow
 from efl.elementary.label import Label
 from efl.evas import EVAS_HINT_EXPAND, EVAS_HINT_FILL
@@ -21,10 +21,10 @@ class MainWindow(object):
             lbl = Label(win)
             lbl.text = "Tab %s"%i
             lbl.show()
-            tabbs.addTab(lbl, "Tab %s"%i)
+            tabbs.add(lbl, "Tab %s"%i)
         
-        tabbs.disableTab(0)
-        tabbs.disableTab(3)
+        tabbs.disable(0)
+        tabbs.disable(3)
         
         tabbs.show()
         
@@ -34,11 +34,12 @@ class MainWindow(object):
         win.show()
     
     def closeChecks(self, tabbs, widget):
-        print widget.text
+        print(widget.text)
         if widget.text != "Tab 1":
             tabbs.deleteTab(widget)
 
 if __name__ == "__main__":
+    elm.init()
     GUI = MainWindow()
     elm.run()
     elm.shutdown()
