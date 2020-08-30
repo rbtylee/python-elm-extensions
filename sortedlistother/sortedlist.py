@@ -1,6 +1,6 @@
 '''general routine to return a sorted list'''
-# encoding: utf-8
 
+# pylint: disable=no-name-in-module
 from efl.elementary.list import List, ELM_LIST_EXPAND
 from efl.elementary.label import Label
 from efl.elementary.box import Box
@@ -17,7 +17,7 @@ EXPAND_HORIZ = EVAS_HINT_EXPAND, 0.0
 FILL_BOTH = EVAS_HINT_FILL, EVAS_HINT_FILL
 FILL_HORIZ = EVAS_HINT_FILL, 0.5
 
-
+# pylint: disable=too-many-instance-attributes
 class SortedList(Box):
     """
 
@@ -226,7 +226,7 @@ class SortedList(Box):
 
         self.sort_by_column(self.sort_column, self.sort_column_ascending)
 
-
+# pylint: disable=too-few-public-methods
 class ScrollableList(List, Scrollable):
     """ Instatiates a scrollable list object. """
 
