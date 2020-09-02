@@ -30,3 +30,5 @@ Credits:
 - [Jeff Hoogland](http://www.jeffhoogland.com/)
 - [Kai Huuhko](https://github.com/kaihu)
 - [Wolfgang Morawetz](https://github.com/wfx/)
+- [Robert Wiley](https://github.com/rbtylee)
+- Robert Rashkin
