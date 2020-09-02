@@ -1,7 +1,7 @@
 ''' generic sorted list utility '''
-# encoding: utf-8
 
-from efl.elementary.genlist import Genlist, GenlistItem, \
+# pylint: disable=no-name-in-module
+from efl.elementary.genlist import Genlist, \
                                    GenlistItemClass, \
                                    ELM_LIST_EXPAND
 from efl.elementary.label import Label
@@ -21,6 +21,7 @@ FILL_BOTH = EVAS_HINT_FILL, EVAS_HINT_FILL
 FILL_HORIZ = EVAS_HINT_FILL, 0.5
 
 
+# pylint: disable=too-many-instance-attributes
 class SortedList(Box):
     """
 
@@ -228,10 +229,8 @@ class SortedList(Box):
         else:
             _ic.text = "⬆"
             self.sort_column_ascending = False
-
-        self.rows.sort(key=lambda e: e[col],
-                       # reverse=False if ascending else True
-                       )
+        # reverse=False if ascending else True
+        self.rows.sort(key=lambda e: e[col])
 
         if not ascending:
             self.rows.reverse()
@@ -250,6 +249,7 @@ class SortedList(Box):
         self.sort_by_column(self.sort_column, self.sort_column_ascending)
 
 
+# pylint: disable=too-few-public-methods
 class ScrollableGenlist(Genlist, Scrollable):
     ''' instantiate the generic, scrollable list '''
 
